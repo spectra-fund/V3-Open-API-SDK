@@ -112,13 +112,11 @@ type WSDepthItem struct {
 	Checksum     int32            `json:"checksum"`
 }
 
-func mergeDepths(oldDepths [][4]interface{}, newDepths [][4]interface{}) (*[][4]interface{}, error) {
-
+func mergeAsksDepths(oldDepths [][4]interface{}, newDepths [][4]interface{}) (*[][4]interface{}, error) {
 	mergedDepths := [][4]interface{}{}
 	oldIdx, newIdx := 0, 0
 
 	for oldIdx < len(oldDepths) && newIdx < len(newDepths) {
-
 		oldItem := oldDepths[oldIdx]
 		newItem := newDepths[newIdx]
 
@@ -157,13 +155,56 @@ func mergeDepths(oldDepths [][4]interface{}, newDepths [][4]interface{}) (*[][4]
 	return &mergedDepths, nil
 }
 
+func mergeBidsDepths(oldDepths [][4]interface{}, newDepths [][4]interface{}) (*[][4]interface{}, error) {
+	mergedDepths := [][4]interface{}{}
+	oldIdx, newIdx := 0, 0
+
+	for oldIdx < len(oldDepths) && newIdx < len(newDepths) {
+		oldItem := oldDepths[oldIdx]
+		newItem := newDepths[newIdx]
+
+		oldPrice, e1 := strconv.ParseFloat(oldItem[0].(string), 10)
+		newPrice, e2 := strconv.ParseFloat(newItem[0].(string), 10)
+		if e1 != nil || e2 != nil {
+			return nil, fmt.Errorf("Bad price, check why. e1: %+v, e2: %+v", e1, e2)
+		}
+
+		if oldPrice == newPrice {
+			newNum := StringToInt64(newItem[1].(string))
+
+			if newNum > 0 {
+				mergedDepths = append(mergedDepths, newItem)
+			}
+
+			oldIdx++
+			newIdx++
+		} else if oldPrice < newPrice {
+			mergedDepths = append(mergedDepths, newItem)
+			newIdx++
+		} else if oldPrice > newPrice {
+			mergedDepths = append(mergedDepths, oldItem)
+			oldIdx++
+		}
+	}
+
+	for ; oldIdx < len(oldDepths); oldIdx++ {
+		mergedDepths = append(mergedDepths, oldDepths[oldIdx])
+	}
+
+	for ; newIdx < len(newDepths); newIdx++ {
+		mergedDepths = append(mergedDepths, newDepths[newIdx])
+	}
+
+	return &mergedDepths, nil
+}
+
 func (di *WSDepthItem) update(newDI *WSDepthItem) error {
-	newAskDepths, err1 := mergeDepths(di.Asks, newDI.Asks)
+	newAskDepths, err1 := mergeAsksDepths(di.Asks, newDI.Asks)
 	if err1 != nil {
 		return err1
 	}
 
-	newBidDepths, err2 := mergeDepths(di.Bids, newDI.Bids)
+	newBidDepths, err2 := mergeBidsDepths(di.Bids, newDI.Bids)
 	if err2 != nil {
 		return err2
 	}

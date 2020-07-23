@@ -10,8 +10,9 @@ package okex
 import (
 	"bytes"
 	"compress/flate"
-	"github.com/gorilla/websocket"
 	"io/ioutil"
+
+	"github.com/gorilla/websocket"
 
 	"log"
 	"os"
@@ -50,9 +51,6 @@ func (a *OKWSAgent) Start(config *Config) error {
 		log.Fatalf("dial:%+v", err)
 		return err
 	} else {
-		if a.config.IsPrint {
-			log.Printf("Connected to %s", a.baseUrl)
-		}
 		a.conn = c
 		a.config = config
 
