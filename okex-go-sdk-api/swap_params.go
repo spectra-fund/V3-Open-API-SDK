@@ -13,6 +13,7 @@ type BasePlaceOrderInfo struct {
 	MatchPrice string `json:"match_price"`
 	Type       string `json:"type"`
 	Size       string `json:"size"`
+	OrderType  string `json:"order_type"`
 }
 
 type PlaceOrderInfo struct {
