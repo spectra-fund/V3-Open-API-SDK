@@ -126,9 +126,9 @@ func mergeAsksDepths(oldDepths [][4]interface{}, newDepths [][4]interface{}) (*[
 			return nil, fmt.Errorf("Bad price, check why. e1: %+v, e2: %+v", e1, e2)
 		}
 
-		if oldPrice == newPrice {
-			newNum := StringToInt64(newItem[1].(string))
+		newNum := StringToInt64(newItem[1].(string))
 
+		if oldPrice == newPrice {
 			if newNum > 0 {
 				mergedDepths = append(mergedDepths, newItem)
 			}
@@ -136,7 +136,9 @@ func mergeAsksDepths(oldDepths [][4]interface{}, newDepths [][4]interface{}) (*[
 			oldIdx++
 			newIdx++
 		} else if oldPrice > newPrice {
-			mergedDepths = append(mergedDepths, newItem)
+			if newNum > 0 {
+				mergedDepths = append(mergedDepths, newItem)
+			}
 			newIdx++
 		} else if oldPrice < newPrice {
 			mergedDepths = append(mergedDepths, oldItem)
@@ -169,9 +171,9 @@ func mergeBidsDepths(oldDepths [][4]interface{}, newDepths [][4]interface{}) (*[
 			return nil, fmt.Errorf("Bad price, check why. e1: %+v, e2: %+v", e1, e2)
 		}
 
-		if oldPrice == newPrice {
-			newNum := StringToInt64(newItem[1].(string))
+		newNum := StringToInt64(newItem[1].(string))
 
+		if oldPrice == newPrice {
 			if newNum > 0 {
 				mergedDepths = append(mergedDepths, newItem)
 			}
@@ -179,7 +181,9 @@ func mergeBidsDepths(oldDepths [][4]interface{}, newDepths [][4]interface{}) (*[
 			oldIdx++
 			newIdx++
 		} else if oldPrice < newPrice {
-			mergedDepths = append(mergedDepths, newItem)
+			if newNum > 0 {
+				mergedDepths = append(mergedDepths, newItem)
+			}
 			newIdx++
 		} else if oldPrice > newPrice {
 			mergedDepths = append(mergedDepths, oldItem)
