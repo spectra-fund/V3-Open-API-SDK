@@ -14,6 +14,8 @@ import (
 	"hash/crc32"
 	"strconv"
 	"strings"
+
+	rbt "github.com/emirpasic/gods/trees/redblacktree"
 )
 
 type BaseOp struct {
@@ -105,123 +107,85 @@ func (r *WSTableResponse) Valid() bool {
 }
 
 type WSDepthItem struct {
-	InstrumentId string           `json:"instrument_id"`
-	Asks         [][4]interface{} `json:"asks"`
-	Bids         [][4]interface{} `json:"bids"`
-	Timestamp    string           `json:"timestamp"`
-	Checksum     int32            `json:"checksum"`
+	InstrumentId string `json:"instrument_id"`
+	Bids         *rbt.Tree
+	Asks         *rbt.Tree
+	Timestamp    string `json:"timestamp"`
+	Checksum     int32  `json:"checksum"`
 }
 
-func mergeAsksDepths(oldDepths [][4]interface{}, newDepths [][4]interface{}) (*[][4]interface{}, error) {
-	mergedDepths := [][4]interface{}{}
-	oldIdx, newIdx := 0, 0
+func first25Updates(t *rbt.Tree) [][4]interface{} {
+	results := make([][4]interface{}, 0, 25)
 
-	for oldIdx < len(oldDepths) && newIdx < len(newDepths) {
-		oldItem := oldDepths[oldIdx]
-		newItem := newDepths[newIdx]
+	size := t.Size()
+	iter := t.Iterator()
 
-		oldPrice, e1 := strconv.ParseFloat(oldItem[0].(string), 10)
-		newPrice, e2 := strconv.ParseFloat(newItem[0].(string), 10)
-		if e1 != nil || e2 != nil {
-			return nil, fmt.Errorf("Bad price, check why. e1: %+v, e2: %+v", e1, e2)
+	if size > 25 {
+		size = 25
+	}
+
+	for i := 0; i < size; i++ {
+		iter.Next()
+		value := iter.Value().([4]interface{})
+		results = append(results, value)
+	}
+
+	return results
+}
+
+func newDepthItem(updates *WsDepthUpdates) *WSDepthItem {
+	item := &WSDepthItem{
+		InstrumentId: updates.InstrumentId,
+		Checksum:     updates.Checksum,
+		Timestamp:    updates.Timestamp,
+		Bids:         rbt.NewWith(bidPriceLevelComparator),
+		Asks:         rbt.NewWith(askPriceLevelComparator),
+	}
+
+	item.update(updates)
+	return item
+}
+
+func mergeDepths(oldDepths *rbt.Tree, newDepths [][4]interface{}) error {
+	for _, newItem := range newDepths {
+		newPrice, err := strconv.ParseFloat(newItem[0].(string), 10)
+		if err != nil {
+			return fmt.Errorf("Bad price, check why. err: %+v", err)
 		}
 
 		newNum := StringToInt64(newItem[1].(string))
 
-		if oldPrice == newPrice {
-			if newNum > 0 {
-				mergedDepths = append(mergedDepths, newItem)
-			}
-
-			oldIdx++
-			newIdx++
-		} else if oldPrice > newPrice {
-			if newNum > 0 {
-				mergedDepths = append(mergedDepths, newItem)
-			}
-			newIdx++
-		} else if oldPrice < newPrice {
-			mergedDepths = append(mergedDepths, oldItem)
-			oldIdx++
+		if newNum == 0 {
+			oldDepths.Remove(newPrice)
+			continue
 		}
+
+		oldDepths.Put(newPrice, newItem)
 	}
 
-	for ; oldIdx < len(oldDepths); oldIdx++ {
-		mergedDepths = append(mergedDepths, oldDepths[oldIdx])
-	}
-
-	for ; newIdx < len(newDepths); newIdx++ {
-		mergedDepths = append(mergedDepths, newDepths[newIdx])
-	}
-
-	return &mergedDepths, nil
+	return nil
 }
 
-func mergeBidsDepths(oldDepths [][4]interface{}, newDepths [][4]interface{}) (*[][4]interface{}, error) {
-	mergedDepths := [][4]interface{}{}
-	oldIdx, newIdx := 0, 0
-
-	for oldIdx < len(oldDepths) && newIdx < len(newDepths) {
-		oldItem := oldDepths[oldIdx]
-		newItem := newDepths[newIdx]
-
-		oldPrice, e1 := strconv.ParseFloat(oldItem[0].(string), 10)
-		newPrice, e2 := strconv.ParseFloat(newItem[0].(string), 10)
-		if e1 != nil || e2 != nil {
-			return nil, fmt.Errorf("Bad price, check why. e1: %+v, e2: %+v", e1, e2)
-		}
-
-		newNum := StringToInt64(newItem[1].(string))
-
-		if oldPrice == newPrice {
-			if newNum > 0 {
-				mergedDepths = append(mergedDepths, newItem)
-			}
-
-			oldIdx++
-			newIdx++
-		} else if oldPrice < newPrice {
-			if newNum > 0 {
-				mergedDepths = append(mergedDepths, newItem)
-			}
-			newIdx++
-		} else if oldPrice > newPrice {
-			mergedDepths = append(mergedDepths, oldItem)
-			oldIdx++
-		}
-	}
-
-	for ; oldIdx < len(oldDepths); oldIdx++ {
-		mergedDepths = append(mergedDepths, oldDepths[oldIdx])
-	}
-
-	for ; newIdx < len(newDepths); newIdx++ {
-		mergedDepths = append(mergedDepths, newDepths[newIdx])
-	}
-
-	return &mergedDepths, nil
-}
-
-func (di *WSDepthItem) update(newDI *WSDepthItem) error {
-	newAskDepths, err1 := mergeAsksDepths(di.Asks, newDI.Asks)
+func (di *WSDepthItem) update(newDI *WsDepthUpdates) error {
+	err1 := mergeDepths(di.Asks, newDI.Asks)
 	if err1 != nil {
 		return err1
 	}
 
-	newBidDepths, err2 := mergeBidsDepths(di.Bids, newDI.Bids)
+	err2 := mergeDepths(di.Bids, newDI.Bids)
 	if err2 != nil {
 		return err2
 	}
 
-	crc32BaseBuffer, expectCrc32 := calCrc32(newAskDepths, newBidDepths)
+	askDepths := first25Updates(di.Asks)
+	bidDepths := first25Updates(di.Bids)
+	crc32BaseBuffer, expectCrc32 := calCrc32(&askDepths, &bidDepths)
 
 	if expectCrc32 != newDI.Checksum {
 		return fmt.Errorf("Checksum's not correct. LocalString: %s, LocalCrc32: %d, RemoteCrc32: %d",
 			crc32BaseBuffer.String(), expectCrc32, newDI.Checksum)
 	} else {
 		di.Checksum = newDI.Checksum
-		di.Bids = *newBidDepths
-		di.Asks = *newAskDepths
 		di.Timestamp = newDI.Timestamp
 	}
 
@@ -269,9 +233,17 @@ func calCrc32(askDepths *[][4]interface{}, bidDepths *[][4]interface{}) (bytes.B
 }
 
 type WSDepthTableResponse struct {
-	Table  string        `json:"table"`
-	Action string        `json:"action",default:""`
-	Data   []WSDepthItem `json:"data"`
+	Table  string           `json:"table"`
+	Action string           `json:"action",default:""`
+	Data   []WsDepthUpdates `json:"data"`
+}
+
+type WsDepthUpdates struct {
+	InstrumentId string           `json:"instrument_id"`
+	Asks         [][4]interface{} `json:"asks"`
+	Bids         [][4]interface{} `json:"bids"`
+	Timestamp    string           `json:"timestamp"`
+	Checksum     int32            `json:"checksum"`
 }
 
 func (r *WSDepthTableResponse) Valid() bool {
@@ -306,7 +278,7 @@ func (d *WSHotDepths) loadWSDepthTableResponse(r *WSDepthTableResponse) error {
 		for i := 0; i < len(r.Data); i++ {
 			crc32BaseBuffer, expectCrc32 := calCrc32(&r.Data[i].Asks, &r.Data[i].Bids)
 			if expectCrc32 == r.Data[i].Checksum {
-				d.DepthMap[r.Data[i].InstrumentId] = &r.Data[i]
+				d.DepthMap[r.Data[i].InstrumentId] = newDepthItem(&r.Data[i])
 			} else {
 				return fmt.Errorf("Checksum's not correct. LocalString: %s, LocalCrc32: %d, RemoteCrc32: %d",
 					crc32BaseBuffer.String(), expectCrc32, r.Data[i].Checksum)
@@ -322,7 +294,7 @@ func (d *WSHotDepths) loadWSDepthTableResponse(r *WSDepthTableResponse) error {
 					return err
 				}
 			} else {
-				d.DepthMap[newDI.InstrumentId] = &newDI
+				d.DepthMap[newDI.InstrumentId] = newDepthItem(&newDI)
 			}
 		}
 
@@ -395,4 +367,34 @@ func defaultPrintData(obj interface{}) error {
 
 	}
 	return nil
+}
+
+func bidPriceLevelComparator(left, right interface{}) int {
+	leftPriceLevel := left.(float64)
+	rightPriceLevel := right.(float64)
+
+	if leftPriceLevel < rightPriceLevel {
+		return 1
+	}
+
+	if leftPriceLevel > rightPriceLevel {
+		return -1
+	}
+
+	return 0
+}
+
+func askPriceLevelComparator(left, right interface{}) int {
+	leftPriceLevel := left.(float64)
+	rightPriceLevel := right.(float64)
+
+	if leftPriceLevel < rightPriceLevel {
+		return -1
+	}
+
+	if leftPriceLevel > rightPriceLevel {
+		return 1
+	}
+
+	return 0
 }
