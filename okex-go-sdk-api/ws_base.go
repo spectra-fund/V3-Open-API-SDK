@@ -302,6 +302,15 @@ func (d *WSHotDepths) loadWSDepthTableResponse(r *WSDepthTableResponse) error {
 		break
 	}
 
+	for i := 0; i < len(r.Data); i++ {
+		depth := d.DepthMap[r.Data[i].InstrumentId]
+		ask1 := depth.Asks.Left().Key.(float64)
+		bid1 := depth.Bids.Left().Key.(float64)
+		if bid1 >= ask1 {
+			return fmt.Errorf("bid1 larger than bid1, bids: %v, asks: %v", depth.Bids.Values(), depth.Asks.Values())
+		}
+	}
+
 	return nil
 }
 
