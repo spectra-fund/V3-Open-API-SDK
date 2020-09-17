@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 
 	"github.com/gorilla/websocket"
+	"github.com/pkg/errors"
 
 	"log"
 	"os"
@@ -155,8 +156,8 @@ func (a *OKWSAgent) Login(apiKey, passphrase string) error {
 	return nil
 }
 
-func (a *OKWSAgent) keepalive() {
-	a.ping()
+func (a *OKWSAgent) keepalive() error {
+	return a.ping()
 }
 
 func (a *OKWSAgent) Stop() error {
@@ -196,10 +197,14 @@ func (a *OKWSAgent) finalize() error {
 	return nil
 }
 
-func (a *OKWSAgent) ping() {
+func (a *OKWSAgent) ping() error {
 	msg := "ping"
 	//log.Printf("Send Msg: %s", msg)
-	a.conn.WriteMessage(websocket.TextMessage, []byte(msg))
+	if err := a.conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+		return errors.Wrap(err, "write ping message")
+	}
+
+	return nil
 }
 
 func (a *OKWSAgent) GzipDecode(in []byte) ([]byte, error) {
@@ -265,7 +270,9 @@ func (a *OKWSAgent) work() {
 	for {
 		select {
 		case <-ticker.C:
-			a.keepalive()
+			if err := a.keepalive(); err != nil {
+				DefaultDataCallBack(err)
+			}
 		case errR := <-a.wsErrCh:
 			a.handleErrResponse(errR)
 		case evtR := <-a.wsEvtCh:
@@ -279,7 +286,6 @@ func (a *OKWSAgent) work() {
 			break
 		case <-a.stopCh:
 			return
-
 		}
 	}
 }
