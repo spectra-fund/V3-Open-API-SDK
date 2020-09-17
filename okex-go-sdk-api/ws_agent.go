@@ -162,7 +162,12 @@ func (a *OKWSAgent) Stop() error {
 		log.Printf("Stop End. Recover msg: %+v", a)
 	}()
 
-	close(a.stopCh)
+	select {
+	case <-a.stopCh:
+	default:
+		close(a.stopCh)
+	}
+
 	return nil
 }
 
