@@ -161,8 +161,9 @@ func (a *OKWSAgent) keepalive() {
 
 func (a *OKWSAgent) Stop() error {
 	defer func() {
-		a := recover()
-		log.Printf("Stop End. Recover msg: %+v", a)
+		if a := recover(); a != nil {
+			log.Printf("Stop End. Recover msg: %+v", a)
+		}
 	}()
 
 	select {
@@ -207,11 +208,19 @@ func (a *OKWSAgent) GzipDecode(in []byte) ([]byte, error) {
 }
 
 func (a *OKWSAgent) handleErrResponse(r interface{}) error {
+	if r == nil {
+		return nil
+	}
+
 	log.Printf("handleErrResponse %+v \n", r)
 	return nil
 }
 
 func (a *OKWSAgent) handleEventResponse(r interface{}) error {
+	if r == nil {
+		return nil
+	}
+
 	er := r.(*WSEventResponse)
 	a.activeChannels[er.Channel] = (er.Event == CHNL_EVENT_SUBSCRIBE)
 	return nil
@@ -240,9 +249,10 @@ func (a *OKWSAgent) handleTableResponse(r interface{}) error {
 
 func (a *OKWSAgent) work() {
 	defer func() {
-		a := recover()
-		log.Printf("Work End. Recover msg: %+v", a)
-		debug.PrintStack()
+		if a := recover(); a != nil {
+			log.Printf("Work End. Recover msg: %+v", a)
+			debug.PrintStack()
+		}
 	}()
 
 	defer a.Stop()
@@ -274,8 +284,7 @@ func (a *OKWSAgent) work() {
 
 func (a *OKWSAgent) receive() {
 	defer func() {
-		a := recover()
-		if a != nil {
+		if a := recover(); a != nil {
 			log.Printf("Receive End. Recover msg: %+v", a)
 			debug.PrintStack()
 		}
@@ -310,7 +319,10 @@ func (a *OKWSAgent) receive() {
 
 		switch v := rsp.(type) {
 		case *WSErrorResponse:
-			a.wsErrCh <- rsp
+			if v != nil {
+				a.wsErrCh <- rsp
+			}
+
 		case *WSEventResponse:
 			if v != nil {
 				a.wsEvtCh <- v
