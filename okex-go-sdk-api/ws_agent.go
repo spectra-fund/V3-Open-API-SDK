@@ -9,12 +9,7 @@ package okex
 
 import (
 	"bytes"
-	"compress/flate"
 	"io/ioutil"
-
-	"github.com/gorilla/websocket"
-	"github.com/pkg/errors"
-
 	"log"
 	"os"
 	"os/signal"
@@ -22,6 +17,10 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/gorilla/websocket"
+	"github.com/klauspost/compress/flate"
+	"github.com/pkg/errors"
 )
 
 type OKWSAgent struct {
@@ -310,6 +309,11 @@ func (a *OKWSAgent) receive() {
 		case websocket.TextMessage:
 		case websocket.BinaryMessage:
 			txtMsg, err = a.GzipDecode(message)
+			if err != nil {
+				a.errCh <- err
+				break
+			}
+
 		}
 
 		rsp, err := loadResponse(txtMsg)
