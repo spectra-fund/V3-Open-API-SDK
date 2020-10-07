@@ -9,6 +9,7 @@ package okex
 
 import (
 	"bytes"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -206,9 +207,19 @@ func (a *OKWSAgent) ping() error {
 	return nil
 }
 
+var readerPool = sync.Pool{
+	New: func() interface{} {
+		return flate.NewReader(bytes.NewReader([]byte{}))
+	},
+}
+
 func (a *OKWSAgent) GzipDecode(in []byte) ([]byte, error) {
-	reader := flate.NewReader(bytes.NewReader(in))
-	defer reader.Close()
+	reader := readerPool.Get().(io.ReadCloser)
+	reader.(flate.Resetter).Reset(bytes.NewReader(in), nil)
+	defer func() {
+		readerPool.Put(reader)
+		reader.Close()
+	}()
 
 	return ioutil.ReadAll(reader)
 }
