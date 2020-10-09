@@ -33,7 +33,6 @@ type OKWSAgent struct {
 	wsErrCh  chan interface{}
 	wsTbCh   chan interface{}
 	stopCh   chan interface{}
-	errCh    chan error
 	signalCh chan os.Signal
 
 	subMap         map[string][]ReceivedDataCallback
@@ -62,7 +61,6 @@ func (a *OKWSAgent) Start(config *Config) error {
 	a.wsEvtCh = make(chan interface{})
 	a.wsErrCh = make(chan interface{})
 	a.wsTbCh = make(chan interface{})
-	a.errCh = make(chan error)
 	a.stopCh = make(chan interface{}, 16)
 	a.signalCh = make(chan os.Signal)
 	a.activeChannels = make(map[string]bool)
@@ -186,7 +184,6 @@ func (a *OKWSAgent) finalize() error {
 	select {
 	case <-a.stopCh:
 		if a.conn != nil {
-			close(a.errCh)
 			close(a.wsTbCh)
 			close(a.wsEvtCh)
 			close(a.wsErrCh)
@@ -291,9 +288,6 @@ func (a *OKWSAgent) work() {
 			a.handleTableResponse(tb)
 		case <-a.signalCh:
 			break
-		case err := <-a.errCh:
-			DefaultDataCallBack(err)
-			break
 		case <-a.stopCh:
 			return
 		}
@@ -311,7 +305,7 @@ func (a *OKWSAgent) receive() {
 	for {
 		messageType, message, err := a.conn.ReadMessage()
 		if err != nil {
-			a.errCh <- err
+			DefaultDataCallBack(err)
 			break
 		}
 
@@ -321,7 +315,7 @@ func (a *OKWSAgent) receive() {
 		case websocket.BinaryMessage:
 			txtMsg, err = a.GzipDecode(message)
 			if err != nil {
-				a.errCh <- err
+				DefaultDataCallBack(err)
 				break
 			}
 
