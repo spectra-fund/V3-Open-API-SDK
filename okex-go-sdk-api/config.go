@@ -26,4 +26,6 @@ type Config struct {
 	IsPrint bool
 	// Internationalization @see file: constants.go
 	I18n string
+
+	Callback ReceivedDataCallback
 }

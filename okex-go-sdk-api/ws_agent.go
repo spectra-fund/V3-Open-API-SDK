@@ -35,7 +35,7 @@ type OKWSAgent struct {
 	stopCh   chan interface{}
 	signalCh chan os.Signal
 
-	subMap         map[string][]ReceivedDataCallback
+	callback       ReceivedDataCallback
 	activeChannels map[string]bool
 	hotDepthsMap   map[string]*WSHotDepths
 
@@ -64,8 +64,8 @@ func (a *OKWSAgent) Start(config *Config) error {
 	a.stopCh = make(chan interface{}, 16)
 	a.signalCh = make(chan os.Signal)
 	a.activeChannels = make(map[string]bool)
-	a.subMap = make(map[string][]ReceivedDataCallback)
 	a.hotDepthsMap = make(map[string]*WSHotDepths)
+	a.callback = config.Callback
 
 	signal.Notify(a.signalCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
@@ -76,7 +76,7 @@ func (a *OKWSAgent) Start(config *Config) error {
 	return nil
 }
 
-func (a *OKWSAgent) Subscribe(channel, filter string, cb ReceivedDataCallback) error {
+func (a *OKWSAgent) Subscribe(channel, filter string) error {
 	a.processMut.Lock()
 	defer a.processMut.Unlock()
 
@@ -92,19 +92,6 @@ func (a *OKWSAgent) Subscribe(channel, filter string, cb ReceivedDataCallback) e
 	}
 	if err := a.conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
 		return err
-	}
-
-	cbs := a.subMap[st.channel]
-	if cbs == nil {
-		cbs = []ReceivedDataCallback{}
-		a.activeChannels[st.channel] = false
-	}
-
-	if cb != nil {
-		cbs = append(cbs, cb)
-		fullTopic, _ := st.ToString()
-		a.subMap[st.channel] = cbs
-		a.subMap[fullTopic] = cbs
 	}
 
 	return nil
@@ -128,7 +115,6 @@ func (a *OKWSAgent) UnSubscribe(channel, filter string) error {
 		return err
 	}
 
-	a.subMap[channel] = nil
 	a.activeChannels[channel] = false
 
 	return nil
@@ -241,21 +227,9 @@ func (a *OKWSAgent) handleEventResponse(r interface{}) error {
 }
 
 func (a *OKWSAgent) handleTableResponse(r interface{}) error {
-	tb := ""
-	switch r.(type) {
-	case *WSTableResponse:
-		tb = r.(*WSTableResponse).Table
-	case *WSDepthTableResponse:
-		tb = r.(*WSDepthTableResponse).Table
-	}
-
-	cbs := a.subMap[tb]
-	if cbs != nil {
-		for i := 0; i < len(cbs); i++ {
-			cb := cbs[i]
-			if err := cb(r); err != nil {
-				return err
-			}
+	if a.callback != nil {
+		if err := a.callback(r); err != nil {
+			return err
 		}
 	}
 	return nil
